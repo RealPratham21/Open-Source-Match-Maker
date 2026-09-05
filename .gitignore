@@ -1,0 +1,25 @@
+# Environment
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Dependencies and build
+node_modules/
+.next/
+out/
+dist/
+
+# OS and editors
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Vercel / local tooling
+.vercel
+*.pem
+.turbo
