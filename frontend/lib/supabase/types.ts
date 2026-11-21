@@ -43,3 +43,5 @@ export type ProfileUpdate = Partial<
     | 'onboarding_completed'
   >
 >
+
+export type UserIssueStatus = 'saved' | 'dismissed' | 'considering' | 'working' | 'completed'

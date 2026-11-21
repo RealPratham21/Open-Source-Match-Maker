@@ -27,8 +27,8 @@ export function DiscoverDashboard({ displayName }: { displayName: string }) {
   const hello = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
   useEffect(() => {
-    if (recommendations.length === 0 && !error) void run()
-  }, [recommendations.length, error, run])
+    if (!loading && recommendations.length === 0 && !error) void run()
+  }, [recommendations.length, loading, error, run])
 
   return (
     <main className="mx-auto max-w-7xl px-5 py-10 md:px-10">
@@ -87,14 +87,14 @@ export function DiscoverDashboard({ displayName }: { displayName: string }) {
           <p className="mt-2 text-sm text-muted-foreground">This uses live GitHub data and can take a few seconds.</p>
         </div>
       ) : filtered.length ? (
-        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+        <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-3">
           {filtered.map((rec) => (
             <RecommendationCard
               key={rec.id}
               rec={rec}
               onAnalysis={() => router.push(`/analysis?id=${rec.id}`)}
               saved={saved.includes(rec.id)}
-              onSave={() => toggle(rec.id)}
+              onSave={() => void toggle(rec)}
             />
           ))}
         </div>

@@ -7,12 +7,13 @@ export const ANALYSIS_CACHE_HOURS = 24
 
 export const MAX_SEARCH_QUERIES = 6
 export const MAX_REPOS_PER_QUERY = 15
-export const SHORTLIST_REPOS = 12
-export const ISSUES_PER_REPO = 15
-export const MAX_ENRICH_ISSUES = 20
-export const MAX_COMMENT_CHECKS = 12
+export const SHORTLIST_REPOS = 20
+export const ISSUES_PER_REPO = 25
+export const MAX_ENRICH_ISSUES = 30
+export const MAX_COMMENT_CHECKS = 18
 export const COMMENTS_PER_ISSUE = 8
-export const MAX_CANDIDATES = 18
+export const MAX_CANDIDATES = 12
+export const MAX_CANDIDATES_PER_REPOSITORY = 3
 export const MIN_ISSUE_BODY_LENGTH = 40
 
 export const SETUP_FILES = [

@@ -29,7 +29,9 @@ export async function requireUser() {
 }
 
 export async function requireOnboardedUser() {
-  return requireUser()
+  const session = await requireUser()
+  if (!session.profile?.onboarding_completed) redirect('/onboarding')
+  return session
 }
 
 export function displayIdentity(profile: Profile | null, user: Parameters<typeof identityFromUser>[0]) {

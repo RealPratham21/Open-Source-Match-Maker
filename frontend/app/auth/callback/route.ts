@@ -39,10 +39,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    await ensureProfile(supabase, user)
+    const profile = await ensureProfile(supabase, user)
+    return NextResponse.redirect(redirectUrl(request, profile.onboarding_completed ? '/discover' : '/onboarding'))
   } catch {
-    // Session is valid even if the profiles table is missing or RLS blocks the row.
+    return NextResponse.redirect(redirectUrl(request, '/onboarding?error=profile'))
   }
-
-  return NextResponse.redirect(redirectUrl(request, '/discover'))
 }

@@ -1,12 +1,10 @@
 import type { Recommendation } from '@/lib/mock-data'
-import type { CandidateIssue } from './types'
+import { assessCandidate } from './assessment'
+import { buildHeuristicBrief } from './brief'
+import type { CandidateIssue, DiscoveryProfile } from './types'
 
-export function candidateToRecommendation(candidate: CandidateIssue): Recommendation {
-  const scores = {
-    'Skill Match': candidate.preliminary.profileRelevance,
-    'Machine Compatibility': candidate.preliminary.machineCompatibility,
-    'Repository Health': candidate.preliminary.repoHealth,
-  }
+export function candidateToRecommendation(candidate: CandidateIssue, profile: DiscoveryProfile): Recommendation {
+  const assessment = assessCandidate(candidate, profile)
   const requirements = [
     ...candidate.environment.languages.map((item) => `${item} project`),
     ...candidate.environment.infrastructure,
@@ -32,38 +30,31 @@ export function candidateToRecommendation(candidate: CandidateIssue): Recommenda
       availability: claimLabel(candidate.preliminary.claimStatus),
       issueUrl: candidate.issue.url,
     },
-    match: Math.round(
-      candidate.preliminary.profileRelevance * 0.4 +
-        candidate.preliminary.repoHealth * 0.3 +
-        candidate.preliminary.machineCompatibility * 0.2 +
-        (candidate.preliminary.claimStatus === 'available' ? 10 : candidate.preliminary.claimStatus === 'possibly_claimed' ? 4 : 7),
-    ),
-    why: whyBullets(candidate),
+    match: assessment.totalScore,
+    why: assessment.reasons,
     stack: [...candidate.environment.languages, ...candidate.environment.technologies].slice(0, 6),
     analysis: {
-      why: 'Detailed match analysis will be generated during ranking. The scores below come from GitHub activity, your profile, and repository setup files.',
-      scores,
-      difficulty: 'Intermediate',
-      scope: 'Not estimated yet',
-      expectedTime: 'Not estimated yet',
+      why: assessment.reasons.join(' '),
+      scores: assessment.scores,
+      difficulty: assessment.difficulty,
+      confidence: assessment.confidence,
+      scope: assessment.scope,
+      expectedTime: assessment.implementationTime,
+      setupTime: assessment.setupTime,
+      implementationTime: assessment.implementationTime,
       requirements,
       skills: candidate.environment.languages,
-      learn: ['Detailed learning notes will be generated during ranking.'],
-      challenges: 'Detailed challenge analysis will be generated during ranking.',
+      learn: assessment.learning.length ? assessment.learning : ['Repository conventions and contribution workflow'],
+      challenges: assessment.warnings.length
+        ? assessment.warnings.join(' ')
+        : 'No material blocker was detected from the issue, repository setup files, or your profile.',
       health: [`Last push: ${relativeTime(candidate.repository.lastPushedAt)}`, `Stars: ${formatStars(candidate.repository.stars)}`],
       availability: [claimLabel(candidate.preliminary.claimStatus)],
+      evidence: assessment.evidence,
+      warnings: assessment.warnings,
+      brief: buildHeuristicBrief(candidate, profile),
     },
   }
-}
-
-function whyBullets(candidate: CandidateIssue) {
-  const bullets: string[] = []
-  if (candidate.repository.primaryLanguage) bullets.push(`Repository language: ${candidate.repository.primaryLanguage}`)
-  if (candidate.preliminary.claimStatus === 'available') bullets.push('No assignee detected')
-  if (candidate.preliminary.claimStatus === 'possibly_claimed') bullets.push('Someone may already be working on this')
-  if (!candidate.environment.gpuLikelyRequired) bullets.push('No GPU requirement detected in setup files')
-  bullets.push('Detailed match analysis will be generated during ranking.')
-  return bullets.slice(0, 3)
 }
 
 function claimLabel(status: CandidateIssue['preliminary']['claimStatus']) {

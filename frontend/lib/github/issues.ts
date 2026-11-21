@@ -43,6 +43,33 @@ export async function listRecentComments(repo: DiscoveredRepository, issueNumber
   }
 }
 
+export async function loadIssueDiscussion(
+  repo: Pick<DiscoveredRepository, 'owner' | 'name' | 'fullName'>,
+  issueNumber: number,
+  commentCount: number,
+) {
+  if (commentCount <= 0) return []
+  const octokit = getOctokit()
+  const perPage = 6
+  const page = Math.max(1, Math.ceil(commentCount / perPage))
+  try {
+    const { data } = await octokit.rest.issues.listComments({
+      owner: repo.owner,
+      repo: repo.name,
+      issue_number: issueNumber,
+      per_page: perPage,
+      page,
+    })
+    return data.map((comment) => ({
+      author: comment.user?.login ?? 'unknown',
+      body: (comment.body ?? '').slice(0, 1400),
+    })).filter((comment) => comment.body.trim())
+  } catch {
+    logDiscovery('brief discussion skipped', { repo: repo.fullName, issue: issueNumber })
+    return []
+  }
+}
+
 function mapIssue(issue: {
   id: number
   number: number

@@ -16,17 +16,27 @@ export function RecommendationCard({
   onSave: () => void
 }) {
   return (
-    <article className="flex flex-col gap-5 rounded-xl border border-border bg-card p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] transition hover:-translate-y-0.5 hover:shadow-md">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-            <GitBranch className="size-3.5" /> {rec.repository.owner} / {rec.repository.name}
+    <article className="flex min-w-0 flex-col gap-5 overflow-hidden rounded-xl border border-border bg-card p-5 shadow-[0_1px_2px_rgba(0,0,0,.03)] transition hover:-translate-y-0.5 hover:shadow-md">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            <GitBranch className="size-3.5 shrink-0" />
+            <span className="truncate">
+              {rec.repository.owner} / {rec.repository.name}
+            </span>
           </div>
-          <h3 className="font-semibold leading-snug text-foreground">{rec.issue.title}</h3>
+          <h3 className="line-clamp-3 break-words font-semibold leading-snug text-foreground [overflow-wrap:anywhere]">
+            {rec.issue.title}
+          </h3>
+          {rec.analysis.brief?.summary ? (
+            <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+              {rec.analysis.brief.summary}
+            </p>
+          ) : null}
         </div>
         <button
           onClick={onSave}
-          className={`rounded-md p-2 ${saved ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'}`}
+          className={`shrink-0 rounded-md p-2 ${saved ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'}`}
           aria-label={saved ? 'Remove from saved' : 'Save issue'}
         >
           <Bookmark className="size-4" fill={saved ? 'currentColor' : 'none'} />
@@ -39,6 +49,8 @@ export function RecommendationCard({
           </span>
         ))}
         <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">{rec.repository.language}</span>
+        <span className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground">{rec.analysis.difficulty}</span>
+        <span className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground">{rec.analysis.expectedTime}</span>
       </div>
       <div className="grid gap-2.5">
         <Score value={rec.analysis.scores['Skill Match']} label="Skill match" />
@@ -49,9 +61,9 @@ export function RecommendationCard({
         <p className="mb-2 text-xs font-medium text-foreground">Why it fits</p>
         <ul className="flex flex-col gap-1.5 text-xs leading-relaxed text-muted-foreground">
           {rec.why.slice(0, 3).map((item) => (
-            <li key={item} className="flex gap-2">
+            <li key={item} className="flex min-w-0 gap-2">
               <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />
-              {item}
+              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{item}</span>
             </li>
           ))}
         </ul>

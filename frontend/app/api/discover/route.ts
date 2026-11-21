@@ -2,24 +2,29 @@ import { NextResponse } from 'next/server'
 import { discoverCandidateIssues } from '@/lib/github/discovery'
 import { DiscoveryError, type DiscoveryProfile } from '@/lib/github/types'
 import { candidateToRecommendation } from '@/lib/github/present'
+import {
+  completeDiscoveryRun,
+  createDiscoveryRun,
+  failDiscoveryRun,
+  getLatestRecommendations,
+} from '@/lib/persistence/recommendations'
 import { createClient } from '@/lib/supabase/server'
 import type { Profile } from '@/lib/supabase/types'
 
 export const maxDuration = 60
 
-const EMPTY_PROFILE: DiscoveryProfile = {
-  languages: [],
-  technologies: [],
-  interests: [],
-  learning_goals: [],
-  contribution_types: [],
-  preferred_difficulty: null,
-  available_time: null,
-  operating_system: null,
-  ram_gb: null,
-  gpu: null,
-  docker_available: null,
-  onboarding_completed: false,
+export async function GET() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Sign in to view recommendations.' }, { status: 401 })
+
+  try {
+    return NextResponse.json(await getLatestRecommendations(supabase, user.id))
+  } catch {
+    return NextResponse.json({ error: 'Could not load previous recommendations.' }, { status: 500 })
+  }
 }
 
 export async function POST() {
@@ -31,21 +36,34 @@ export async function POST() {
     return NextResponse.json({ error: 'Sign in to discover issues.' }, { status: 401 })
   }
 
-  let profile: DiscoveryProfile = EMPTY_PROFILE
+  const { data, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
+  if (profileError) return NextResponse.json({ error: 'Could not load your profile.' }, { status: 500 })
+  if (!data || !(data as Profile).onboarding_completed) {
+    return NextResponse.json({ error: 'Complete onboarding before discovering issues.' }, { status: 409 })
+  }
+  const profile = toDiscoveryProfile(data as Profile)
+
+  let runId: string
   try {
-    const { data } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle()
-    if (data) profile = toDiscoveryProfile(data as Profile)
+    runId = await createDiscoveryRun(supabase, user.id, profile)
   } catch {
-    // Discovery still runs if the profiles table is missing.
+    return NextResponse.json({ error: 'Could not start a discovery run.' }, { status: 500 })
   }
 
   try {
     const candidates = await discoverCandidateIssues(profile, supabase)
+    const ranked = candidates
+      .map((candidate) => ({ candidate, recommendation: candidateToRecommendation(candidate, profile) }))
+      .sort((a, b) => b.recommendation.match - a.recommendation.match)
+    const rankedCandidates = ranked.map((item) => item.candidate)
+    const recommendations = ranked.map((item) => item.recommendation)
+    await completeDiscoveryRun(supabase, runId, user.id, rankedCandidates, recommendations)
     return NextResponse.json({
-      candidates,
-      recommendations: candidates.map(candidateToRecommendation),
+      candidates: rankedCandidates,
+      recommendations,
     })
   } catch (error) {
+    await failDiscoveryRun(supabase, runId, user.id, error instanceof Error ? error.message : 'Discovery failed')
     if (error instanceof DiscoveryError) {
       const status = error.code === 'rate_limit' || error.code === 'github' || error.code === 'missing_token' ? 503 : 400
       return NextResponse.json({ error: error.message, code: error.code }, { status })
