@@ -1,5 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { MAX_CANDIDATES, MAX_COMMENT_CHECKS, MAX_ENRICH_ISSUES, SHORTLIST_REPOS } from './constants'
+import {
+  MAX_CANDIDATES,
+  MAX_CANDIDATES_PER_REPOSITORY,
+  MAX_COMMENT_CHECKS,
+  MAX_ENRICH_ISSUES,
+  SHORTLIST_REPOS,
+} from './constants'
 import { getCachedAnalysis, getCachedIssues, updateIssueClaim, upsertAnalysis, upsertIssues, upsertRepository } from './cache'
 import { listOpenIssues, listRecentComments } from './issues'
 import { logDiscovery } from './log'
@@ -10,7 +16,7 @@ import {
   candidateRank,
   claimStatusFromAssignees,
   claimStatusFromComments,
-  filterIssue,
+  issueFilterReason,
   scoreIssueRelevance,
   scoreMachineCompatibility,
 } from './scoring'
@@ -37,6 +43,7 @@ export async function discoverCandidateIssues(profile: DiscoveryProfile, supabas
 
   let fetchedIssues = 0
   const collected: Array<{ repo: DiscoveredRepository; issue: DiscoveredIssue; repoRowId: string | null }> = []
+  const filterCounts: Record<string, number> = {}
 
   for (const repo of shortlist) {
     const repoRowId = await safe(() => upsertRepository(supabase, repo))
@@ -45,11 +52,14 @@ export async function discoverCandidateIssues(profile: DiscoveryProfile, supabas
     fetchedIssues += issues.length
     if (!cachedIssues && repoRowId) await safe(() => upsertIssues(supabase, repoRowId, issues))
     for (const issue of issues) {
-      if (filterIssue(issue, repo, working)) collected.push({ repo, issue, repoRowId })
+      const reason = issueFilterReason(issue, repo, working)
+      filterCounts[reason] = (filterCounts[reason] ?? 0) + 1
+      if (reason === 'accepted') collected.push({ repo, issue, repoRowId })
     }
   }
 
   logDiscovery('open issues fetched', { count: fetchedIssues })
+  logDiscovery('issue filter funnel', filterCounts)
   logDiscovery('issues survived filtering', { count: collected.length })
   if (collected.length === 0) {
     throw new DiscoveryError('no_issues', 'No suitable open issues were found in the shortlisted repositories.')
@@ -129,13 +139,31 @@ export async function discoverCandidateIssues(profile: DiscoveryProfile, supabas
     })
   }
 
-  return candidates
-    .sort(
+  const sorted = candidates.sort(
       (a, b) =>
         candidateRank(b.preliminary.profileRelevance, b.preliminary.repoHealth, b.preliminary.machineCompatibility, b.preliminary.claimStatus) -
         candidateRank(a.preliminary.profileRelevance, a.preliminary.repoHealth, a.preliminary.machineCompatibility, a.preliminary.claimStatus),
     )
-    .slice(0, MAX_CANDIDATES)
+  const selected = selectDiverseCandidates(sorted)
+  logDiscovery('diverse recommendations selected', { count: selected.length })
+  return selected
+}
+
+export function selectDiverseCandidates(
+  candidates: CandidateIssue[],
+  maximum = MAX_CANDIDATES,
+  maximumPerRepository = MAX_CANDIDATES_PER_REPOSITORY,
+) {
+  const selected: CandidateIssue[] = []
+  const perRepository = new Map<number, number>()
+  for (const candidate of candidates) {
+    const count = perRepository.get(candidate.repository.id) ?? 0
+    if (count >= maximumPerRepository) continue
+    selected.push(candidate)
+    perRepository.set(candidate.repository.id, count + 1)
+    if (selected.length >= maximum) break
+  }
+  return selected
 }
 
 function withFallbackProfile(profile: DiscoveryProfile): DiscoveryProfile {

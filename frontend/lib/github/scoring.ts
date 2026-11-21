@@ -37,29 +37,44 @@ export function isStaleRepository(pushedAt: string) {
   return monthsAgo(pushedAt) > REPO_ACTIVITY_MONTHS * 1.25
 }
 
-export function filterIssue(issue: DiscoveredIssue, repo: DiscoveredRepository, profile: DiscoveryProfile) {
-  if (issue.isPullRequest) return false
-  if (issue.assignees.length > 0) return false
-  if (monthsAgo(issue.updatedAt) > ISSUE_STALE_MONTHS) return false
+export type IssueFilterReason =
+  | 'accepted'
+  | 'pull_request'
+  | 'assigned'
+  | 'stale'
+  | 'rejected_label'
+  | 'meta_issue'
+  | 'insufficient_description'
+  | 'language_mismatch'
+
+export function issueFilterReason(issue: DiscoveredIssue, repo: DiscoveredRepository, profile: DiscoveryProfile): IssueFilterReason {
+  if (issue.isPullRequest) return 'pull_request'
+  if (issue.assignees.length > 0) return 'assigned'
+  if (monthsAgo(issue.updatedAt) > ISSUE_STALE_MONTHS) return 'stale'
 
   const labels = issue.labels.map((label) => label.toLowerCase())
-  if (labels.some((label) => REJECT_LABELS.includes(label))) return false
-
-  const title = issue.title.toLowerCase()
-  if (/^(meta|rfc:|tracking issue|umbrella|status:)/.test(title)) return false
+  if (labels.some((label) => REJECT_LABELS.includes(label))) return 'rejected_label'
 
   const body = (issue.body ?? '').trim()
+  const title = issue.title.toLowerCase()
+  const metaText = `${title}\n${body}`
+  if (/^(meta|rfc:|tracking issue|umbrella|status:)/.test(title) || /not an implementation specification|type:\s*(?:wave\s+)?tracker|this issue tracks\b/i.test(metaText)) return 'meta_issue'
+
   const preferred = labels.some((label) => PREFERRED_LABELS.includes(label))
-  if (body.length < MIN_ISSUE_BODY_LENGTH && !preferred) return false
+  if (body.length < MIN_ISSUE_BODY_LENGTH && !preferred) return 'insufficient_description'
 
   const lang = repo.primaryLanguage?.toLowerCase()
   if (lang) {
     const known = [...profile.languages, ...profile.learning_goals].some((item) => item.toLowerCase() === lang)
     const techMatch = profile.technologies.some((tech) => haystack([repo.description, ...repo.topics, issue.title]).includes(tech.toLowerCase()))
-    if (!known && !techMatch && profile.languages.length > 0) return false
+    if (!known && !techMatch && profile.languages.length > 0) return 'language_mismatch'
   }
 
-  return true
+  return 'accepted'
+}
+
+export function filterIssue(issue: DiscoveredIssue, repo: DiscoveredRepository, profile: DiscoveryProfile) {
+  return issueFilterReason(issue, repo, profile) === 'accepted'
 }
 
 export function claimStatusFromAssignees(assignees: string[]): ClaimStatus {

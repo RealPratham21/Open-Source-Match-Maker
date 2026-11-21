@@ -13,6 +13,7 @@ type DiscoveryState = {
   stage: string
   error: string | null
   run: (force?: boolean) => Promise<void>
+  patchRecommendation: (recommendation: Recommendation) => void
 }
 
 const DiscoveryContext = createContext<DiscoveryState | null>(null)
@@ -27,10 +28,12 @@ const STAGES = [
 export function DiscoveryProvider({ children }: { children: ReactNode }) {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([])
   const [candidates, setCandidates] = useState<CandidateIssue[]>([])
-  const [loading, setLoading] = useState(false)
-  const [stage, setStage] = useState(STAGES[0])
+  const [loading, setLoading] = useState(true)
+  const [stage, setStage] = useState('Loading previous matches…')
   const [error, setError] = useState<string | null>(null)
   const inflight = useRef(false)
+  const candidatesRef = useRef<CandidateIssue[]>([])
+  candidatesRef.current = candidates
 
   const run = useCallback(async (force = false) => {
     if (inflight.current) return
@@ -81,16 +84,52 @@ export function DiscoveryProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const patchRecommendation = useCallback((recommendation: Recommendation) => {
+    setRecommendations((current) => {
+      if (!current.some((item) => item.id === recommendation.id)) return current
+      const next = current.map((item) => (item.id === recommendation.id ? recommendation : item))
+      writeCache({ recommendations: next, candidates: candidatesRef.current })
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     const cached = readCache()
     if (cached) {
       setRecommendations(cached.recommendations)
       setCandidates(cached.candidates)
+      setLoading(false)
+      return
+    }
+
+    let active = true
+    void fetch('/api/discover')
+      .then(async (response) => {
+        const payload = (await response.json()) as {
+          error?: string
+          recommendations?: Recommendation[]
+          candidates?: CandidateIssue[]
+        }
+        if (!response.ok) throw new Error(payload.error ?? 'Could not load previous recommendations.')
+        if (!active) return
+        const value = { recommendations: payload.recommendations ?? [], candidates: payload.candidates ?? [] }
+        setRecommendations(value.recommendations)
+        setCandidates(value.candidates)
+        if (value.recommendations.length) writeCache(value)
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : 'Could not load previous recommendations.')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
     }
   }, [])
 
   return (
-    <DiscoveryContext.Provider value={{ recommendations, candidates, loading, stage, error, run }}>
+    <DiscoveryContext.Provider value={{ recommendations, candidates, loading, stage, error, run, patchRecommendation }}>
       {children}
     </DiscoveryContext.Provider>
   )

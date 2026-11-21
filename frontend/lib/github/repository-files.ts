@@ -4,6 +4,9 @@ import { logDiscovery } from './log'
 import type { DiscoveredRepository, EnvironmentSignals } from './types'
 
 type ContentItem = { name: string; path: string; type: string }
+type RepositoryIdentity = Pick<DiscoveredRepository, 'owner' | 'name' | 'fullName'>
+
+export type ContributorDocument = { path: string; content: string }
 
 const ROOT_FILES = new Set(SETUP_FILES.map((name) => name.toLowerCase()))
 
@@ -61,7 +64,23 @@ export async function analyzeRepositorySetup(repo: DiscoveredRepository): Promis
   }
 }
 
-async function listRoot(repo: DiscoveredRepository): Promise<ContentItem[]> {
+export async function loadContributorDocuments(repo: RepositoryIdentity, issueBody = ''): Promise<ContributorDocument[]> {
+  const listing = await listRoot(repo)
+  const referencedRootFiles = listing.filter((item) => item.type === 'file' && issueBody.toLowerCase().includes(item.name.toLowerCase()))
+  const referencedPaths = extractReferencedPaths(issueBody).map((path) => ({ name: path.split('/').at(-1) ?? path, path, type: 'file' }))
+  const setupDocuments = listing
+    .filter((item) => item.type === 'file')
+    .sort((a, b) => documentPriority(a.name) - documentPriority(b.name))
+    .filter((item) => documentPriority(item.name) < 99)
+  const selected = uniqueContentItems([...referencedRootFiles, ...referencedPaths, ...setupDocuments]).slice(0, 6)
+  const documents = await Promise.all(selected.map(async (item) => {
+    const content = await readFile(repo, item.path)
+    return content ? { path: item.path, content: content.slice(0, documentLimit(item.name)) } : null
+  }))
+  return documents.filter((item): item is ContributorDocument => Boolean(item))
+}
+
+async function listRoot(repo: RepositoryIdentity): Promise<ContentItem[]> {
   const octokit = getOctokit()
   try {
     const { data } = await octokit.rest.repos.getContent({
@@ -77,7 +96,7 @@ async function listRoot(repo: DiscoveredRepository): Promise<ContentItem[]> {
   }
 }
 
-async function readFile(repo: DiscoveredRepository, path: string) {
+async function readFile(repo: RepositoryIdentity, path: string) {
   const octokit = getOctokit()
   try {
     const { data } = await octokit.rest.repos.getContent({
@@ -90,6 +109,44 @@ async function readFile(repo: DiscoveredRepository, path: string) {
   } catch {
     return null
   }
+}
+
+function documentPriority(name: string) {
+  const value = name.toLowerCase()
+  if (value.startsWith('contributing')) return 0
+  if (value.startsWith('readme')) return 1
+  if (['pyproject.toml', 'package.json', 'go.mod', 'cargo.toml'].includes(value)) return 2
+  if (['requirements.txt', 'makefile', 'justfile'].includes(value)) return 3
+  return 99
+}
+
+function documentLimit(name: string) {
+  const value = name.toLowerCase()
+  if (value.startsWith('contributing')) return 6500
+  if (value.startsWith('readme')) return 6500
+  return 3200
+}
+
+function extractReferencedPaths(body: string) {
+  const candidates = [
+    ...[...body.matchAll(/`([^`]+\.(?:md|txt|toml|json|ya?ml|py|tsx?|jsx?|go|rs))`/gi)].map((match) => match[1]),
+    ...[...body.matchAll(/\[[^\]]+\]\((?!https?:\/\/)([^)#?]+\.(?:md|txt|toml|json|ya?ml|py|tsx?|jsx?|go|rs))(?:#[^)]+)?\)/gi)].map((match) => match[1]),
+  ]
+  return [...new Set(candidates.map((path) => safeDecode(path).replace(/^\.\//, '').trim()).filter((path) => path && !path.startsWith('/') && !path.includes('..') && path.length < 240))]
+}
+
+function safeDecode(value: string) {
+  try { return decodeURIComponent(value) } catch { return value }
+}
+
+function uniqueContentItems(items: ContentItem[]) {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const key = item.path.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function mentions(text: string, needles: string[]) {

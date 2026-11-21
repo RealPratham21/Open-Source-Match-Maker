@@ -59,10 +59,9 @@ export function generateRepositoryQueries(profile: DiscoveryProfile) {
   const learning = profile.learning_goals[0]
 
   for (const language of languages) {
-    if (interests.length === 0) {
-      queries.push(`language:${githubLanguage(language)} ${base}`)
-      continue
-    }
+    // Always retain a broad language query. Interest terms improve precision, but
+    // using them exclusively can leave otherwise suitable repositories invisible.
+    queries.push(`language:${githubLanguage(language)} ${base}`)
     for (const interest of interests) {
       queries.push(`language:${githubLanguage(language)} ${interestTerm(interest)} ${base}`)
     }
